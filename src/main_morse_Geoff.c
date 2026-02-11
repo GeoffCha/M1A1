@@ -51,13 +51,11 @@ const struct gpio_dt_spec* p_gds_leds[NUM_LEDS] = {
 	&gds_leds[0], &gds_leds[1], &gds_leds[2], &gds_leds[3]
 };
 
-/* Thread arguments: which LED + which word to blink. */
-struct thread_args {
-	const struct gpio_dt_spec* led;  // which LED pin this thread controls
-	uint8_t word_id;                 // 0..3 picks which hard-coded word to blink
-};
-
-static struct thread_args thread_params[NUM_LEDS];  // one per thread (must live forever)
+/* We are going to keep this SUPER simple:
+ * - no structs
+ * - no args->something
+ * - just 4 thread functions (one per LED/word)
+ */
 
 /* Helper: LED ON for ms milliseconds */
 static void led_on_for(const struct gpio_dt_spec* led, uint32_t ms)
@@ -142,35 +140,57 @@ static void blink_dumb(const struct gpio_dt_spec* led)
 	blink_word(led, letters, ARRAY_SIZE(letters));
 }
 
-/*
- * Thread entry function:
- * Zephyr threads always use the signature: void (*)(void*, void*, void*)
- * We pass a pointer to a thread_args struct as p1.
- */
-void morse_thread(void* p1, void* p2, void* p3)
+/* Thread for LED0: blink "geoff" forever */
+static void thread_led0(void* p1, void* p2, void* p3)
 {
-	ARG_UNUSED(p2);  // we don't use p2/p3 in this example
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	/* Convert the generic void* argument into our real type. */
-	const struct thread_args* args = (const struct thread_args*)p1;
-
-	static const char* const names[] = {"geoff", "cha", "is", "dumb"};
-	printk("Morse thread started: LED=%p word=%s\n", args->led, names[args->word_id]);
-
-	while (true) {
-		/* Brute force: pick one of the 4 hard-coded words */
-		if (args->word_id == 0) {
-			blink_geoff(args->led);
-		} else if (args->word_id == 1) {
-			blink_cha(args->led);
-		} else if (args->word_id == 2) {
-			blink_is(args->led);
-		} else { /* word_id == 3 */
-			blink_dumb(args->led);
-		}
+	printk("Thread LED0 started (geoff)\n");
+	while (1) {
+		blink_geoff(p_gds_leds[0]);
 	}
 };
+
+/* Thread for LED1: blink "cha" forever */
+static void thread_led1(void* p1, void* p2, void* p3)
+{
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	printk("Thread LED1 started (cha)\n");
+	while (1) {
+		blink_cha(p_gds_leds[1]);
+	}
+}
+
+/* Thread for LED2: blink "is" forever */
+static void thread_led2(void* p1, void* p2, void* p3)
+{
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	printk("Thread LED2 started (is)\n");
+	while (1) {
+		blink_is(p_gds_leds[2]);
+	}
+}
+
+/* Thread for LED3: blink "dumb" forever */
+static void thread_led3(void* p1, void* p2, void* p3)
+{
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	printk("Thread LED3 started (dumb)\n");
+	while (1) {
+		blink_dumb(p_gds_leds[3]);
+	}
+}
 
 int main(void)
 {
@@ -184,18 +204,25 @@ int main(void)
 	k_msleep(500);
 
 	/* 2) Create one Morse thread per LED. */
-	for (size_t idx = 0; idx < NUM_LEDS; idx++) {
-		/* Each thread gets: which LED + which word (0..3) */
-		thread_params[idx].led = p_gds_leds[idx];
-		thread_params[idx].word_id = (uint8_t)idx;
+	thread_tids[0] = k_thread_create(&(thread_datas[0]), thread_stacks[0],
+	                                K_KERNEL_STACK_SIZEOF(thread_stacks[0]),
+	                                thread_led0, NULL, NULL, NULL,
+	                                MY_PRIORITY, 0, K_NO_WAIT);
 
-		thread_tids[idx] = k_thread_create(
-			&(thread_datas[idx]), thread_stacks[idx],
-			K_KERNEL_STACK_SIZEOF(thread_stacks[idx]),
-			morse_thread,
-			(void*)&thread_params[idx], NULL, NULL,  // p1=our args, p2/p3 unused
-			MY_PRIORITY, 0, K_NO_WAIT);
-	}
+	thread_tids[1] = k_thread_create(&(thread_datas[1]), thread_stacks[1],
+	                                K_KERNEL_STACK_SIZEOF(thread_stacks[1]),
+	                                thread_led1, NULL, NULL, NULL,
+	                                MY_PRIORITY, 0, K_NO_WAIT);
+
+	thread_tids[2] = k_thread_create(&(thread_datas[2]), thread_stacks[2],
+	                                K_KERNEL_STACK_SIZEOF(thread_stacks[2]),
+	                                thread_led2, NULL, NULL, NULL,
+	                                MY_PRIORITY, 0, K_NO_WAIT);
+
+	thread_tids[3] = k_thread_create(&(thread_datas[3]), thread_stacks[3],
+	                                K_KERNEL_STACK_SIZEOF(thread_stacks[3]),
+	                                thread_led3, NULL, NULL, NULL,
+	                                MY_PRIORITY, 0, K_NO_WAIT);
 
 	/* 3) main thread goes idle; blinking happens in the worker threads. */
 	while (1) {
